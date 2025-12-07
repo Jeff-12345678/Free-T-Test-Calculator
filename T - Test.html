@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paired T-Test System</title>
+    
+    <script>
+        // --- Simplified T-Distribution Critical Value Helper ---
+        const ALPHA = 0.05; // Set Alpha globally for consistency
+
+        function getCriticalValue(df, alpha, tails) {
+            // Simplistic linear interpolation between a few points. Highly inaccurate but demonstrates the concept.
+            if (alpha !== 0.05) return 2.0; // Default if not 5%
+            
+            const criticalValues = {
+                // Two-tailed (tails=2) at alpha=0.05
+                2: 4.303, 
+                5: 2.571, 
+                10: 2.228, 
+                20: 2.086,
+                30: 2.042 
+            };
+            
+            let cv;
+            if (df in criticalValues) {
+                cv = criticalValues[df];
+            } else if (df > 30) {
+                // Use Z-score for high df (approximate infinity df)
+                cv = tails === 2 ? 1.96 : 1.645;
+            } else {
+                // Find the closest known value
+                let closestDf = Object.keys(criticalValues).map(Number).sort((a,b) => Math.abs(a-df) - Math.abs(b-df))[0];
+                cv = criticalValues[closestDf];
+            }
+            
+            // One-tailed adjustment (very rough approximation)
+            if (tails === 1) {
+                // For a two-tailed 5% CV, the corresponding one-tailed 5% CV is different.
+                // Since our table is only two-tailed, this remains an approximation for one-tailed:
+                if (df <= 5) return cv * 0.9; // Arbitrary adjustment for demonstration
+                return 1.645; // Z-score for one-tailed alpha=0.05
+            }
+            return cv;
+        }
+    </script>
+
+    <style>
+        /* --- CSS for Design and Back Color --- */
+        :root {
+            --main-bg-color: #F0F8FF; /* AliceBlue */
+            --header-color: #007BFF;  /* Bright Blue */
+            --button-color: #28A745;  /* Green for main action */
+            --secondary-button-color: #17A2B8; /* Teal for data control */
+            --danger-button-color: #DC3545; /* Red for destructive actions */
+            --text-color: #333;
+            --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            --border-color: #CCC;
+        }
+
+        body {
+            background-color: var(--main-bg-color);
+            font-family: var(--font-family);
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+        }
+
+        .container {
+            background-color: #FFFFFF;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 800px;
+            display: none; 
+        }
+
+        /* --- Start Screen Design --- */
+        #start-screen {
+            background-color: #FFFFFF;
+            padding: 50px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+
+        #start-screen h1 {
+            color: var(--header-color);
+            margin-bottom: 30px;
+        }
+
+        #start-button {
+            padding: 15px 30px;
+            background-color: var(--button-color);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 1.2em;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        #start-button:hover {
+            background-color: #1e7e34;
+        }
+        
+        /* --- Calculator Design --- */
+        h2 {
+            color: var(--header-color);
+            text-align: center;
+            margin-bottom: 25px;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px dashed var(--border-color);
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+
+        .data-table th, .data-table td {
+            border: 1px solid var(--border-color);
+            padding: 8px;
+            text-align: center;
+        }
+
+        .data-table th {
+            background-color: #F2F2F2;
+            color: var(--text-color);
+        }
+
+        .data-table input[type="number"] {
+            width: 90%;
+            padding: 5px;
+            border: 1px solid var(--border-color);
+            border-radius: 3px;
+            /* Placeholder styling */
+            font-style: italic; 
+            color: #888;
+            
+            /* --- CRITICAL CHANGE: Set input text color to black --- */
+            color: #000000;
+            font-weight: bold;
+            font-style: normal;
+        }
+
+        .data-controls button {
+            padding: 8px 15px;
+            margin-right: 5px;
+            border-radius: 5px;
+            font-size: 0.9em;
+            color: white;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        #addRowBtn, #removeRowBtn {
+            background-color: var(--secondary-button-color);
+            border: none;
+        }
+
+        #clearDataBtn {
+            background-color: var(--danger-button-color);
+            border: none;
+        }
+
+        .action-buttons {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 20px;
+        }
+        
+        .action-buttons button {
+            flex-grow: 1;
+            margin: 0 5px;
+            padding: 12px;
+            border-radius: 5px;
+            font-size: 1.1em;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        #calculateBtn {
+            background-color: var(--button-color);
+        }
+
+        #backToInputBtn {
+            background-color: #6C757D; /* Gray */
+        }
+        
+        #downloadBtn {
+            background-color: #17A2B8; /* Teal */
+        }
+
+        #results-screen {
+            background-color: #FFFFFF;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 800px;
+            display: none; 
+        }
+
+        #results-content {
+            border: 2px solid var(--header-color);
+            padding: 20px;
+            border-radius: 8px;
+            background-color: #EBF5FF;
+            white-space: pre-wrap;
+            min-height: 200px;
+            font-family: monospace;
+            font-size: 15px;
+        }
+        .final-decision {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 1.2em;
+            font-weight: bold;
+            text-align: center;
+        }
+        .reject { background-color: #F8D7DA; color: var(--danger-button-color); }
+        .accept { background-color: #D4EDDA; color: var(--button-color); }
+        .options-box {
+            background-color: #F9F9F9;
+            padding: 15px;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .options-box label {
+            font-weight: normal;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="start-screen">
+        <h1>Welcome to the T-Test System</h1>
+        <p>A quick tool for Paired T-Test calculations.</p>
+        <button id="start-button" onclick="showCalculator()">Start Calculator</button>
+    </div>
+
+    <div id="calculator-interface" class="container">
+        <h2>Paired T-Test Calculator</h2>
+        
+        <div class="options-box">
+            <h3>Test Setup</h3>
+            <label>Level of Significance ($\alpha$): 
+                <span style="font-weight: bold; color: var(--danger-button-color);">5% (0.05)</span>
+            </label>
+            <br><br>
+
+            <label for="hypothesis">Select Alternative Hypothesis ($H_a$):</label><br>
+            <input type="radio" id="twoTailed" name="hypothesis" value="two" checked>
+            <label for="twoTailed"> $\mu_1 \neq \mu_2$ (Two-Tailed)</label><br>
+            
+            <input type="radio" id="greaterThan" name="hypothesis" value="greater">
+            <label for="greaterThan"> $\mu_1 > \mu_2$ (One-Tailed: $\mu_1$ is greater)</label><br>
+            
+            <input type="radio" id="lessThan" name="hypothesis" value="less">
+            <label for="lessThan"> $\mu_1 < \mu_2$ (One-Tailed: $\mu_2$ is greater)</label>
+        </div>
+
+        <div class="controls">
+            <h3>Input Data</h3>
+            <div class="data-controls">
+                <button id="addRowBtn" onclick="addRow()">+ Add Row</button>
+                <button id="removeRowBtn" onclick="removeRow()">- Remove Row</button>
+                <button id="clearDataBtn" onclick="clearAllData()">Clear All Data</button>
+            </div>
+        </div>
+
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Pair</th>
+                    <th>Group 1 (Before/Pre-Test)</th>
+                    <th>Group 2 (After/Post-Test)</th>
+                </tr>
+            </thead>
+            <tbody id="dataBody">
+                </tbody>
+        </table>
+        
+        <div class="action-buttons">
+            <button id="calculateBtn" onclick="prepareResults()">Calculate Result</button>
+        </div>
+    </div>
+
+    <div id="results-screen">
+        <h2>T-Test Results Summary</h2>
+        <div id="results-content">
+            </div>
+        
+        <div class="action-buttons" style="margin-top: 30px;">
+            <button id="backToInputBtn" onclick="showCalculator()">Back to Input</button>
+            <button id="downloadBtn" onclick="downloadResults()">Download Result (Word)</button>
+        </div>
+    </div>
+
+
+    <script>
+        // --- JavaScript Logic ---
+        // ALPHA is defined in the head script for the critical value function
+        let rowCount = 0;
+        let calculatedOutput = ""; 
+
+        // --- Flow Control Functions ---
+        function showCalculator() {
+            document.getElementById('start-screen').style.display = 'none';
+            document.getElementById('results-screen').style.display = 'none';
+            document.getElementById('calculator-interface').style.display = 'block';
+            
+            if (document.getElementById('dataBody').children.length === 0) {
+                for (let i = 0; i < 5; i++) {
+                    addRow();
+                }
+            }
+        }
+        
+        function prepareResults() {
+            const result = calculateTTest();
+            if (result.startsWith("Error:")) {
+                alert(result);
+                return;
+            }
+            
+            document.getElementById('results-content').innerHTML = result;
+            document.getElementById('calculator-interface').style.display = 'none';
+            document.getElementById('results-screen').style.display = 'block';
+        }
+
+        // --- Data Management Functions ---
+        function addRow() {
+            rowCount++;
+            const tableBody = document.getElementById('dataBody');
+            const newRow = tableBody.insertRow();
+            newRow.id = `row-${rowCount}`;
+
+            newRow.insertCell(0).textContent = rowCount;
+
+            const cell1 = newRow.insertCell(1);
+            const input1 = document.createElement('input');
+            input1.type = 'number';
+            input1.className = 'group1-data';
+            input1.placeholder = 'Enter Value'; 
+            cell1.appendChild(input1);
+
+            const cell2 = newRow.insertCell(2);
+            const input2 = document.createElement('input');
+            input2.type = 'number';
+            input2.className = 'group2-data';
+            input2.placeholder = 'Enter Value';
+            cell2.appendChild(input2);
+        }
+
+        function removeRow() {
+            const tableBody = document.getElementById('dataBody');
+            if (rowCount > 2) { 
+                tableBody.deleteRow(rowCount - 1);
+                rowCount--;
+            } else {
+                alert("You must keep at least 2 pairs of data points for a valid Paired T-Test.");
+            }
+        }
+
+        function clearAllData() {
+            const confirmed = confirm("Are you sure you want to clear all data and rows?");
+            if (confirmed) {
+                const tableBody = document.getElementById('dataBody');
+                tableBody.innerHTML = ''; 
+                rowCount = 0;
+                for (let i = 0; i < 5; i++) {
+                    addRow();
+                }
+            }
+        }
+
+        // --- Statistics Core Function ---
+        function calculateTTest() {
+            const group1Inputs = Array.from(document.querySelectorAll('.group1-data'));
+            const group2Inputs = Array.from(document.querySelectorAll('.group2-data'));
+            const hypothesisType = document.querySelector('input[name="hypothesis"]:checked').value;
+
+            const data1 = group1Inputs.map(input => parseFloat(input.value)).filter(n => !isNaN(n));
+            const data2 = group2Inputs.map(input => parseFloat(input.value)).filter(n => !isNaN(n));
+
+            // --- Validation ---
+            if (data1.length < 2 || data2.length < 2 || data1.length !== data2.length) {
+                return "Error: Both groups must have the same number of data points (at least 2 pairs). Please check your inputs.";
+            }
+
+            const n = data1.length;
+            const df = n - 1;
+
+            // 1. Calculate T-Statistic
+            const differences = data1.map((val, i) => val - data2[i]);
+            const meanD = differences.reduce((sum, d) => sum + d, 0) / n;
+            const sumOfSquaredDiffs = differences.reduce((sum, d) => sum + Math.pow(d - meanD, 2), 0);
+            const sD = Math.sqrt(sumOfSquaredDiffs / df);
+            const seD = sD / Math.sqrt(n);
+            const tStat = meanD / seD;
+            
+            // 2. Determine Critical Value and Decision
+            const tails = hypothesisType === 'two' ? 2 : 1;
+            const absoluteTStat = Math.abs(tStat);
+            const criticalValue = getCriticalValue(df, ALPHA, tails); 
+
+            let decision;
+            let decisionClass;
+            
+            if (absoluteTStat > criticalValue) {
+                decision = "REJECT NULL HYPOTHESIS ($H_0$)";
+                decisionClass = "reject";
+            } else {
+                decision = "ACCEPT NULL HYPOTHESIS ($H_0$)";
+                decisionClass = "accept";
+            }
+            
+            // 3. Assemble Output
+            let output = `### Paired T-Test Calculation Summary ###\n`;
+            output += `Hypothesis ($H_a$): ${hypothesisType === 'two' ? 'Two-Tailed (\\mu_1 \\neq \\mu_2)' : hypothesisType === 'greater' ? 'One-Tailed (\\mu_1 > \\mu_2)' : 'One-Tailed (\\mu_1 < \\mu_2)'}\n`;
+            output += `Significance Level (\\alpha): ${ALPHA} (5%)\n`;
+            output += `Sample Size (Pairs): $n = ${n}\n\n`;
+
+            output += `*** Statistical Values ***\n`;
+            output += `\u2022 Degrees of Freedom ($df$): ${df}\n`;
+            output += `\u2022 Critical Value ($t_{crit}$): \u00B1${criticalValue.toFixed(3)}\n`;
+            output += `\u2022 Computed Value ($t_{comp}$): ${tStat.toFixed(4)}\n\n`;
+
+            output += `*** Decision Criteria ***\n`;
+            output += `Since |$t_{comp}$| (${absoluteTStat.toFixed(4)}) is ${absoluteTStat > criticalValue ? 'GREATER THAN' : 'LESS THAN'} $t_{crit}$ (${criticalValue.toFixed(3)}),\n`;
+            output += `we ${absoluteTStat > criticalValue ? 'reject' : 'accept'} the null hypothesis.\n`;
+            
+            calculatedOutput = output; // Save for download
+            
+            // Note: HTML output needs to use proper tags for the final decision box
+            return output + `<div class="final-decision ${decisionClass}">${decision}</div>`;
+        }
+        
+        // --- Download Function ---
+        function downloadResults() {
+            const resultsText = document.getElementById('results-content').innerText;
+
+            const element = document.createElement('a');
+            const file = new Blob([resultsText], { type: 'text/plain;charset=utf-8' });
+            
+            element.href = URL.createObjectURL(file);
+            element.download = 'TTest_Results_' + new Date().toISOString().slice(0, 10) + '.doc';
+            
+            document.body.appendChild(element); 
+            element.click();
+            document.body.removeChild(element);
+        }
+        
+        // Set up the start button listener
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('start-screen').style.display = 'block';
+        });
+
+    </script>
+</body>
+</html>
